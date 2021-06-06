@@ -6,10 +6,13 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 	"sync"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/extrame/xls"
 	"github.com/tealeg/xlsx"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var removeUnparsable = flag.Bool("r", false, "Remove file if it could not be parsed")
@@ -19,13 +22,13 @@ var ch = make(chan fileSummary, 1000)
 
 type fileSummary struct {
 	Path   string
-	Sheets []*xlsx.Sheet
+	Sheets []string
 }
 
 func (f fileSummary) String() string {
 	s := f.Path + "\n"
 	for _, sheet := range f.Sheets {
-		s += "\t" + sheet.Name + "\n"
+		s += "\t" + sheet + "\n"
 	}
 
 	return s
@@ -46,17 +49,47 @@ Options
 func process(wg *sync.WaitGroup, filePath string) {
 	defer wg.Done()
 
-	xlFile, err := xlsx.OpenFile(filePath)
+	extension := strings.Split(filePath, ".")[1]
 
-	if err != nil {
-		log.Error("Could not parse ", filePath)
+	if extension == "xls" {
+		xlsFile, err := xls.Open(filePath, "utf-8")
 
-		if *removeUnparsable {
-			os.Remove(filePath)
+		if err == nil {
+			if *listSheets {
+				sheets := make([]string, 0)
+				for i := 0; i < xlsFile.NumSheets(); i++ {
+					sheets = append(sheets, xlsFile.GetSheet(i).Name)
+				}
+
+				ch <- fileSummary{filePath, sheets}
+			}
+		} else {
+			log.Error("Could not parse ", filePath)
+
+			if *removeUnparsable {
+				os.Remove(filePath)
+			}
 		}
-	} else {
-		if *listSheets {
-			ch <- fileSummary{Path: filePath, Sheets: xlFile.Sheets}
+	}
+
+	if extension == "xlsx" {
+		xlsxFile, err := xlsx.OpenFile(filePath)
+
+		if err == nil {
+			if *listSheets {
+				sheets := make([]string, 0)
+				for _, sheet := range xlsxFile.Sheets {
+					sheets = append(sheets, sheet.Name)
+				}
+
+				ch <- fileSummary{filePath, sheets}
+			}
+		} else {
+			log.Error("Could not parse ", filePath)
+
+			if *removeUnparsable {
+				os.Remove(filePath)
+			}
 		}
 	}
 }
