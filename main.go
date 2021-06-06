@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -52,6 +53,13 @@ func process(wg *sync.WaitGroup, filePath string) {
 	extension := strings.Split(filePath, ".")[1]
 
 	if extension == "xls" {
+		debug.SetPanicOnFault(true)
+		defer func() {
+			if p := recover(); p != nil {
+				return
+			}
+		}()
+
 		xlsFile, err := xls.Open(filePath, "utf-8")
 
 		if err == nil {
