@@ -47,58 +47,70 @@ Options
 	os.Exit(1)
 }
 
+func handleParseError(filePath string) {
+	log.Error("Could not parse ", filePath)
+
+	if *removeUnparsable {
+		os.Remove(filePath)
+	}
+}
+
+func xlsGetSheets(filePath string) []string {
+	xlsFile, err := xls.Open(filePath, "utf-8")
+
+	if err != nil {
+		handleParseError(filePath)
+		return []string{}
+	}
+
+	sheets := make([]string, 0)
+	for i := 0; i < xlsFile.NumSheets(); i++ {
+		sheets = append(sheets, xlsFile.GetSheet(i).Name)
+	}
+
+	return sheets
+}
+
+func xlsxGetSheets(filePath string) []string {
+	xlsxFile, err := xlsx.OpenFile(filePath)
+
+	if err != nil {
+		handleParseError(filePath)
+		return []string{}
+	}
+
+	sheets := make([]string, 0)
+	for _, sheet := range xlsxFile.Sheets {
+		sheets = append(sheets, sheet.Name)
+	}
+
+	return sheets
+}
+
 func process(wg *sync.WaitGroup, filePath string) {
 	defer wg.Done()
 
+	debug.SetPanicOnFault(true)
+	defer func() {
+		if p := recover(); p != nil {
+			handleParseError(filePath)
+			return
+		}
+	}()
+
 	extension := strings.Split(filePath, ".")[1]
+	var sheets []string
 
 	if extension == "xls" {
-		debug.SetPanicOnFault(true)
-		defer func() {
-			if p := recover(); p != nil {
-				return
-			}
-		}()
-
-		xlsFile, err := xls.Open(filePath, "utf-8")
-
-		if err == nil {
-			if *listSheets {
-				sheets := make([]string, 0)
-				for i := 0; i < xlsFile.NumSheets(); i++ {
-					sheets = append(sheets, xlsFile.GetSheet(i).Name)
-				}
-
-				ch <- fileSummary{filePath, sheets}
-			}
-		} else {
-			log.Error("Could not parse ", filePath)
-
-			if *removeUnparsable {
-				os.Remove(filePath)
-			}
-		}
+		sheets = xlsGetSheets(filePath)
 	}
 
 	if extension == "xlsx" {
-		xlsxFile, err := xlsx.OpenFile(filePath)
+		sheets = xlsxGetSheets(filePath)
+	}
 
-		if err == nil {
-			if *listSheets {
-				sheets := make([]string, 0)
-				for _, sheet := range xlsxFile.Sheets {
-					sheets = append(sheets, sheet.Name)
-				}
-
-				ch <- fileSummary{filePath, sheets}
-			}
-		} else {
-			log.Error("Could not parse ", filePath)
-
-			if *removeUnparsable {
-				os.Remove(filePath)
-			}
-		}
+	if *listSheets {
+		ch <- fileSummary{filePath, sheets}
 	}
 }
 
